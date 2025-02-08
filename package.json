@@ -1,5 +1,5 @@
 {
-  "name": "@brimble/consul-resolver",
+  "name": "consul-resolver",
   "version": "1.0.0",
   "description": "A load balancer for Consul services with Redis-based metrics",
   "main": "dist/index.js",

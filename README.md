@@ -43,6 +43,7 @@ const resolver = new ConsulResolver({
   host: "consul.example.com",
   port: 443,
   secure: true,
+  cachePrefix: "mydb",
   token: process.env.CONSUL_TOKEN,
   agent: new https.Agent({
     rejectUnauthorized: false,
@@ -68,6 +69,7 @@ The ConsulResolver constructor accepts the following configuration options:
 
 ```typescript
 interface ConsulResolverConfig {
+  cachePrefix: string;    // Prefix for Redis cache keys
   redis: Redis;           // Redis instance
   host: string;          // Consul host
   port: number;          // Consul port

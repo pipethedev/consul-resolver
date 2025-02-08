@@ -12,10 +12,14 @@ This package provides multiple load balancing algorithms, such as Round Robin, L
 - Consul Integration
 
 ## Installation
+```bash
+yarn add consul-resolver
+```
 
 ```bash
 npm install consul-resolver
 ```
+
 
 ## Prerequisites
 

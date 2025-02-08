@@ -1,6 +1,6 @@
 # consul-resolver
 
-A simple load balancer for Consul services with Redis-based metrics tracking. 
+A simple consul library for load balancing and metrics tracking with redis. 
 This package provides multiple load balancing algorithms, such as Round Robin, Least Connection, and Weighted Round Robin.
 
 ## Features

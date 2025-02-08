@@ -9,10 +9,7 @@ This package provides multiple load balancing algorithms, such as Round Robin, L
   - Round Robin
   - Least Connection
   - Weighted Round Robin
-- Real-time connection tracking
-- Health check integration
-- Redis-based metrics storage
-- Service metrics monitoring
+- Consul Integration
 
 ## Installation
 
@@ -80,7 +77,7 @@ interface ConsulResolverConfig {
 ```
 ## API Reference
 
-### `selectOptimalService(service: string, algorithm?: SelectionAlgorithm): Promise<OptimalService | null>`
+### `selectOptimalService(service: string, algorithm?: SelectionAlgorithm): Promise<OptimalServiceResult | null>`
 Selects the optimal service instance based on the specified algorithm.
 
 ### `getSelectionMetrics(serviceId: string): Promise<ServiceMetrics | null>`
@@ -97,13 +94,13 @@ Clears all stored metrics from Redis.
 
 ## Types
 
-### OptimalService
+### OptimalServiceResult
 ```typescript
-interface OptimalService {
+interface OptimalServiceResult {
   selected: {
     ip: string;
     port: number;
-  };
+  } | null;
   services: Array<{
     ip: string;
     port: number;

@@ -1,6 +1,14 @@
 import type { Redis as IORedis } from "ioredis";
 import { Agent } from "https";
 
+export interface ConsulDNSRecord {
+  name: string;
+  port: number;
+  priority: number;
+  weight: number;
+  ip?: string;
+}
+
 export interface ConsulResolverConfig {
   redis: IORedis;
   cachePrefix: string;

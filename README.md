@@ -41,9 +41,9 @@ const redis = new Redis({
 
 const resolver = new ConsulResolver({
   redis,
-  host: "consul.example.com",
-  port: 443,
-  secure: true,
+  host: "127.0.0.1",
+  port: 8500,
+  secure: false,
   cachePrefix: "mydb",
   token: process.env.CONSUL_TOKEN,
   agent: new https.Agent({

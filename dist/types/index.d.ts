@@ -1,8 +1,8 @@
 /// <reference types="node" />
-import Redis from "ioredis";
+import type { Redis as IORedis } from 'ioredis';
 import { Agent } from "https";
 export interface ConsulResolverConfig {
-    redis: Redis;
+    redis: IORedis;
     cachePrefix: string;
     host: string;
     port: number;

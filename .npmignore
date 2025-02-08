@@ -2,3 +2,4 @@ src/
 tests/
 .gitignore
 tsconfig.json
+test.ts

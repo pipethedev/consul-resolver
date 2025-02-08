@@ -19,9 +19,25 @@ class ConsulResolver {
 
     private cachePrefix: string;
 
+    private weights: typeof DEFAULT_WEIGHTS;
+
+    private metrics: typeof DEFAULT_METRICS;
+
     constructor(private config: ConsulResolverConfig) {
         this.redis = config.redis;
         this.cachePrefix = config.cachePrefix;
+        if (config.weights) {
+            this.weights = config.weights;
+        } else {
+            this.weights = DEFAULT_WEIGHTS;
+        }
+
+        if (config.metrics) {
+            this.metrics = config.metrics;
+        } else {
+            this.metrics = DEFAULT_METRICS;
+        }
+
         this.consul = new Consul({
             host: config.host,
             port: config.port,
@@ -117,7 +133,7 @@ class ConsulResolver {
             )
             .map((service) => {
                 const serviceMetrics =
-                    metrics.get(service.Service.ID) || DEFAULT_METRICS;
+                    metrics.get(service.Service.ID) || this.metrics;
                 return {
                     service,
                     connections: serviceMetrics.activeConnections || 0,
@@ -153,7 +169,7 @@ class ConsulResolver {
             const results = await pipeline.exec();
             if (!results) {
                 services.forEach((service) => {
-                    metricsMap.set(service.Service.ID, { ...DEFAULT_METRICS });
+                    metricsMap.set(service.Service.ID, { ...this.metrics });
                 });
                 return metricsMap;
             }
@@ -169,7 +185,7 @@ class ConsulResolver {
                     if (metricsResult?.[1]) {
                         metrics = JSON.parse(metricsResult[1] as string);
                     } else {
-                        metrics = { ...DEFAULT_METRICS };
+                        metrics = { ...this.metrics };
                     }
 
                     const connections = connectionsResult?.[1]
@@ -183,13 +199,13 @@ class ConsulResolver {
                         `Error processing metrics for service ${serviceId}:`,
                         error,
                     );
-                    metricsMap.set(serviceId, { ...DEFAULT_METRICS });
+                    metricsMap.set(serviceId, { ...this.metrics });
                 }
             });
         } catch (error) {
             console.error("Error executing Redis pipeline:", error);
             services.forEach((service) => {
-                metricsMap.set(service.Service.ID, { ...DEFAULT_METRICS });
+                metricsMap.set(service.Service.ID, { ...this.metrics });
             });
         }
 
@@ -231,12 +247,12 @@ class ConsulResolver {
                 );
 
                 const totalScore =
-                    healthScore * DEFAULT_WEIGHTS.health +
-                    responseTimeScore * DEFAULT_WEIGHTS.responseTime +
-                    errorRateScore * DEFAULT_WEIGHTS.errorRate +
-                    resourceScore * DEFAULT_WEIGHTS.resources +
-                    connectionScore * DEFAULT_WEIGHTS.connections +
-                    distributionScore * DEFAULT_WEIGHTS.distribution;
+                    healthScore * this.weights.health +
+                    responseTimeScore * this.weights.responseTime +
+                    errorRateScore * this.weights.errorRate +
+                    resourceScore * this.weights.resources +
+                    connectionScore * this.weights.connections +
+                    distributionScore * this.weights.distribution;
 
                 return {
                     score: totalScore,
@@ -315,7 +331,7 @@ class ConsulResolver {
                 metrics.activeConnections = (metrics.activeConnections || 0) + 1;
             } else {
                 metrics = {
-                    ...DEFAULT_METRICS,
+                    ...this.metrics,
                     activeConnections: 1,
                 };
             }
@@ -348,7 +364,7 @@ class ConsulResolver {
                 );
             } else {
                 metrics = {
-                    ...DEFAULT_METRICS,
+                    ...this.metrics,
                     activeConnections: 0,
                 };
             }
@@ -369,21 +385,13 @@ class ConsulResolver {
 
     private async updateSelectionMetrics(serviceId: string): Promise<void> {
         try {
-            const defaultMetrics: ServiceMetrics = {
-                responseTime: 100,
-                errorRate: 0,
-                cpuUsage: 50,
-                memoryUsage: 50,
-                activeConnections: 0,
-            };
-
             const existingMetrics = await this.redis.get(serviceId);
             let metrics: ServiceMetrics;
 
             if (existingMetrics) {
                 metrics = JSON.parse(existingMetrics);
             } else {
-                metrics = { ...defaultMetrics };
+                metrics = { ...this.metrics };
             }
 
             metrics.lastSelectedTime = Date.now();

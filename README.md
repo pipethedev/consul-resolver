@@ -124,6 +124,85 @@ interface ServiceMetrics {
 }
 ```
 
+# Service Selection Weights and Metrics
+
+## Selection Weights
+
+The Weighted Round Robin algorithm uses the following weight distribution to calculate service scores:
+
+```typescript
+const DEFAULT_WEIGHTS = {
+  health: 0.25,       // Service health status (25%)
+  responseTime: 0.2,  // Response time performance (20%)
+  errorRate: 0.2,     // Error rate of the service (20%)
+  resources: 0.15,    // CPU and memory usage (15%)
+  connections: 0.1,   // Active connection count (10%)
+  distribution: 0.1   // Time since last selection (10%)
+};
+```
+
+### Weight Explanations
+
+- **health (25%)**: Prioritizes services with passing health checks
+  - Calculated as ratio of passing checks to total checks
+  - Most heavily weighted as service health is critical
+
+- **responseTime (20%)**: Favors services with lower response times
+  - Normalized against a 500ms baseline
+  - Higher weight indicates better performance
+
+- **errorRate (20%)**: Considers service reliability
+  - Normalized against a 100% scale
+  - Lower error rates result in higher scores
+
+- **resources (15%)**: Accounts for service load
+  - Combines CPU and memory utilization
+  - Prevents overloading of busy instances
+
+- **connections (10%)**: Active connection count
+  - Helps distribute load across instances
+  - Prevents any single instance from being overwhelmed
+
+- **distribution (10%)**: Time since last selection
+  - Ensures fair rotation among services
+  - Prevents "hot spot" instances
+
+## Default Metrics
+
+Each service starts with these default metrics if no historical data is available:
+
+```typescript
+const DEFAULT_METRICS = {
+  responseTime: 100,        // Default 100ms response time
+  errorRate: 0,            // Start with 0% error rate
+  cpuUsage: 50,           // Assume 50% CPU usage
+  memoryUsage: 50,        // Assume 50% memory usage
+  activeConnections: 0     // Start with no active connections
+};
+```
+
+### Metrics Explanation
+
+- **responseTime**: Initial 100ms baseline
+  - Conservative default for new services
+  - Updated based on actual performance
+
+- **errorRate**: Starts at 0%
+  - Optimistic initial error rate
+  - Adjusted based on actual failures
+
+- **cpuUsage**: Default 50%
+  - Moderate initial CPU load assumption
+  - Updated with actual metrics when available
+
+- **memoryUsage**: Default 50%
+  - Moderate initial memory usage assumption
+  - Updated with actual metrics when available
+
+- **activeConnections**: Starts at 0
+  - Fresh services begin with no connections
+  - Incremented/decremented as connections are established/closed
+
 ## Usage with Express (Best used as a middleware)
 
 ```typescript

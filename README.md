@@ -124,7 +124,7 @@ interface ServiceMetrics {
 }
 ```
 
-## Usage with Express
+## Usage with Express (Best used as a middleware)
 
 ```typescript
 import express from 'express';

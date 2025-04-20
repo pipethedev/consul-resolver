@@ -19,6 +19,7 @@
     "service-discovery"
   ],
   "dependencies": {
+    "@brimble/utils": "^1.5.59",
     "consul": "^2.0.1",
     "ioredis": "^5.3.2"
   },

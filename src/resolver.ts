@@ -11,6 +11,7 @@ import {
     OptimalServiceResult,
     ConsulDNSRecord,
 } from "./types";
+import { log } from "@brimble/utils";
 
 class ConsulResolver {
     private currentIndex = 0;
@@ -69,7 +70,7 @@ class ConsulResolver {
                             ip: ips[0]
                         };
                     } catch (error) {
-                        console.warn(`Failed to resolve IP for ${record.name}:`, error);
+                        log.warn(`Failed to resolve IP for ${record.name}:`, error);
                         return record;
                     }
                 })
@@ -77,7 +78,7 @@ class ConsulResolver {
 
             return resolvedRecords;
         } catch (error) {
-            console.error('DNS resolution error:', error);
+            log.error('DNS resolution error:', { error });
             return [];
         }
     }
@@ -117,7 +118,7 @@ class ConsulResolver {
             );
 
             if (matchedHealthChecks.length === 0) {
-                console.warn('No matching services found between DNS and Consul');
+                log.warn('No matching services found between DNS and Consul');
                 return { selected: null, services: [] };
             }
 
@@ -172,7 +173,7 @@ class ConsulResolver {
                 }),
             };
         } catch (error) {
-            console.error('Error selecting optimal service:', error);
+            log.error('Error selecting optimal service:', error);
             return { selected: null, services: [] };
         }
     }
@@ -270,7 +271,7 @@ class ConsulResolver {
 
                     metricsMap.set(serviceId, metrics);
                 } catch (error) {
-                    console.warn(
+                    log.warn(
                         `Error processing metrics for service ${serviceId}:`,
                         error,
                     );
@@ -278,7 +279,7 @@ class ConsulResolver {
                 }
             });
         } catch (error) {
-            console.error("Error executing Redis pipeline:", error);
+            log.error("Error executing Redis pipeline:", error);
             services.forEach((service) => {
                 metricsMap.set(service.Service.ID, { ...this.metrics });
             });
@@ -418,7 +419,7 @@ class ConsulResolver {
                 24 * 60 * 60,
             );
         } catch (error) {
-            console.warn(
+            log.warn(
                 `Failed to increment connections for service ${serviceId}:`,
                 error,
             );
@@ -451,7 +452,7 @@ class ConsulResolver {
                 24 * 60 * 60,
             );
         } catch (error) {
-            console.warn(
+            log.warn(
                 `Failed to decrement connections for service ${serviceId}:`,
                 error,
             );
@@ -479,7 +480,7 @@ class ConsulResolver {
                 24 * 60 * 60,
             );
         } catch (error) {
-            console.warn(
+            log.warn(
                 `Failed to update selection metrics for service ${serviceId}:`,
                 error,
             );
@@ -491,7 +492,7 @@ class ConsulResolver {
             const metrics = await this.redis.get(this.getConnectionKey(serviceId));
             return metrics ? JSON.parse(metrics) : null;
         } catch (error) {
-            console.error("Error getting service metrics:", error);
+            log.error("Error getting service metrics:", error);
             return null;
         }
     }
@@ -503,7 +504,7 @@ class ConsulResolver {
                 await this.redis.del(...keys);
             }
         } catch (error) {
-            console.error("Error refreshing metrics:", error);
+            log.error("Error refreshing metrics:", error);
         }
     }
 }

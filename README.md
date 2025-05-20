@@ -10,6 +10,8 @@ This package provides multiple load balancing algorithms, such as Round Robin, L
   - Least Connection
   - Weighted Round Robin
 - Consul Integration
+- Configurable caching with Redis
+- Debug logging support
 
 ## Installation
 
@@ -24,7 +26,7 @@ npm install consul-resolver
 ## Prerequisites
 
 - Node.js >= 14
-- Redis server
+- Redis server (optional, if caching is enabled)
 - Consul server
 
 ## Quick Start
@@ -51,10 +53,13 @@ const resolver = new ConsulResolver({
     minVersion: "TLSv1.2",
     maxVersion: "TLSv1.3",
   }),
+  cacheEnabled: true, // Enable Redis caching
+  cacheTTL: 60000, // Cache TTL in milliseconds (default: 60s)
+  debug: false // Enable debug logging
 });
 
 const service = await resolver.selectOptimalService(
-  "my-service",
+  "grafana",
   SelectionAlgorithm.LeastConnection,
 );
 
@@ -70,12 +75,15 @@ The ConsulResolver constructor accepts the following configuration options:
 ```typescript
 interface ConsulResolverConfig {
   cachePrefix: string; // Prefix for Redis cache keys
-  redis: Redis; // Redis instance
+  redis?: Redis; // Redis instance (required if cacheEnabled is true)
   host: string; // Consul host
   port: number; // Consul port
   secure: boolean; // Use HTTPS
   token?: string; // Consul ACL token
   agent?: Agent; // Optional HTTPS agent configuration
+  cacheEnabled?: boolean; // Enable/disable Redis caching (default: false)
+  cacheTTL?: number; // Cache TTL in milliseconds (default: 60000)
+  debug?: boolean; // Enable debug logging (default: false)
   weights?: {
     health: number;
     responseTime: number;
@@ -102,7 +110,7 @@ Selects the optimal service instance based on the specified algorithm.
 
 ### `getSelectionMetrics(serviceId: string): Promise<ServiceMetrics | null>`
 
-Retrieves current metrics for a specific service.
+Retrieves current metrics for a specific service. Returns null if caching is disabled.
 
 ### `incrementConnections(serviceId: string): Promise<void>`
 
@@ -114,7 +122,7 @@ Decrements the active connection count for a service.
 
 ### `refresh(): Promise<void>`
 
-Clears all stored metrics from Redis.
+Clears all stored metrics from Redis. No-op if caching is disabled.
 
 ## Types
 
@@ -241,7 +249,11 @@ import express from "express";
 import { ConsulResolver, SelectionAlgorithm } from "consul-resolver";
 
 const app = express();
-const resolver = new ConsulResolver(config);
+const resolver = new ConsulResolver({
+  ...config,
+  cacheEnabled: true, // Enable caching
+  debug: true // Enable debug logging
+});
 
 app.use(async (req, res, next) => {
   const service = await resolver.selectOptimalService("api-service");

@@ -1,6 +1,14 @@
 import type { Redis as IORedis } from "ioredis";
 import { Agent } from "https";
 
+export interface SrvRecord {
+  name: string;
+  ip: string;
+  port: number;
+  priority: number;
+  weight: number;
+}
+
 export interface ConsulDNSRecord {
   name: string;
   port: number;
@@ -11,14 +19,20 @@ export interface ConsulDNSRecord {
 
 export interface ConsulResolverConfig {
   redis: IORedis;
+  cacheEnabled: boolean;
   cachePrefix: string;
   host: string;
   port: number;
   secure: boolean;
+  debug?: boolean;
   token?: string;
   agent?: Agent | import("http").Agent;
   weights?: typeof DEFAULT_WEIGHTS;
   metrics?: typeof DEFAULT_METRICS;
+  cacheTTL?: number;
+  dnsEndpoints?: string[];
+  dnsTimeout?: number;
+  dnsRetries?: number;
 }
 
 export const DEFAULT_WEIGHTS = {

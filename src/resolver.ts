@@ -1,6 +1,6 @@
-import Consul from "consul";
+import { query } from 'dns-query';
 import Redis from "ioredis";
-import dns from 'dns/promises';
+import Consul from "consul";
 import {
     ConsulResolverConfig,
     ServiceMetrics,
@@ -9,37 +9,29 @@ import {
     DEFAULT_WEIGHTS,
     DEFAULT_METRICS,
     OptimalServiceResult,
-    ConsulDNSRecord,
+    SrvRecord
 } from "./types";
 import { log } from "@brimble/utils";
 
 class ConsulResolver {
     private currentIndex = 0;
-
     private consul: Consul;
-
-    private redis: Redis;
-
+    private redis: Redis | undefined;
     private cachePrefix: string;
-
     private weights: typeof DEFAULT_WEIGHTS;
-
     private metrics: typeof DEFAULT_METRICS;
+    private cacheTTL: number;
+    private cacheEnabled: boolean;
+    private debug: boolean;
 
     constructor(private config: ConsulResolverConfig) {
-        this.redis = config.redis;
+        this.debug = config.debug || false;
         this.cachePrefix = config.cachePrefix;
-        if (config.weights) {
-            this.weights = config.weights;
-        } else {
-            this.weights = DEFAULT_WEIGHTS;
-        }
+        this.cacheEnabled = config.cacheEnabled;
+        this.weights = config.weights || DEFAULT_WEIGHTS;
+        this.metrics = config.metrics || DEFAULT_METRICS;
 
-        if (config.metrics) {
-            this.metrics = config.metrics;
-        } else {
-            this.metrics = DEFAULT_METRICS;
-        }
+        this.cacheTTL = Math.floor((config.cacheTTL || 60 * 1000) / 1000);
 
         this.consul = new Consul({
             host: config.host,
@@ -50,35 +42,91 @@ class ConsulResolver {
             },
             agent: config.agent,
         });
+
+        if(this.cacheEnabled) {
+            this.redis = config.redis;
+        }
     }
 
     private getConnectionKey(serviceId: string): string {
         return `${this.cachePrefix}:connections:${serviceId}`;
     }
+    
+    private getDNSCacheKey(service: string): string {
+        return `${this.cachePrefix}:dns:${service}`;
+    }
+    
+    private getHealthCacheKey(service: string): string {
+        return `${this.cachePrefix}:health:${service}`;
+    }
 
-    private async resolveDNS(service: string): Promise<ConsulDNSRecord[]> {
+    private async resolveDNS(service: string) {
+        const cacheKey = this.getDNSCacheKey(service);
+
+        if(this.cacheEnabled) {
+            const cachedData = await this.redis?.get(cacheKey);
+    
+            if (cachedData) {
+                if(this.debug) {
+                    log.debug(`DNS cache hit for ${service}`);
+                }
+                return JSON.parse(cachedData);
+            }
+        }
+        
         try {
-            dns.setServers([`${this.config.host}:8600`]);
-            const records = await dns.resolveSrv(`${service}.service.consul`);
-
-            const resolvedRecords = await Promise.all(
-                records.map(async record => {
-                    try {
-                        const ips = await dns.resolve4(record.name);
-                        return {
-                            ...record,
-                            ip: ips[0]
-                        };
-                    } catch (error) {
-                        log.warn(`Failed to resolve IP for ${record.name}:`, error);
-                        return record;
-                    }
-                })
+            const result = await query(
+                { 
+                    question: { 
+                        type: 'SRV',
+                        name: `${service}.service.consul` 
+                    } 
+                },
+                {
+                    endpoints: [
+                        `udp://${this.config.host}:8600`,
+                        ...(this.config.dnsEndpoints || []).map(endpoint => `udp://${endpoint}`)
+                    ],
+                    timeout: this.config.dnsTimeout || 5000,
+                    retries: this.config.dnsRetries || 2
+                }
             );
-
-            return resolvedRecords;
+            
+            if (!result.answers || result.answers.length === 0) {
+                if(this.debug) {
+                    log.debug(`No SRV records found for ${service}`);
+                }
+                return [];
+            }
+            
+            const records = result.answers.map((answer: any) => {
+                const aRecord = result.additionals?.find(
+                    (additional) => additional.name === (answer.data as any).target && additional.type === 'A'
+                );
+                
+                return {
+                    name: (answer.data as any).target,
+                    ip: aRecord?.data || '',
+                    port: (answer.data as any).port,
+                    priority: (answer.data as any).priority,
+                    weight: (answer.data as any).weight
+                };
+            }).filter(record => record.ip);
+            
+            if(this.cacheEnabled) {
+                await this.redis?.set(
+                    cacheKey, 
+                    JSON.stringify(records),
+                    'EX',
+                    this.cacheTTL
+                );
+            }
+            
+            return records;
         } catch (error) {
-            log.error('DNS resolution error:', { error });
+            if(this.debug) {
+                log.error('DNS resolution error:', error);
+            }
             return [];
         }
     }
@@ -89,28 +137,61 @@ class ConsulResolver {
         maxDNSWeight: number
     ): number {
         const healthScore = this.calculateHealthScore(service);
-
         const normalizedDNSWeight = dnsWeight / maxDNSWeight;
-
         return (healthScore * 0.7) + (normalizedDNSWeight * 0.3);
     }
 
+    /**
+     * Select the optimal service based on the specified algorithm
+     */
     async selectOptimalService(
         service: string,
         algorithm: SelectionAlgorithm = SelectionAlgorithm.RoundRobin
     ): Promise<OptimalServiceResult> {
         try {
             const [healthChecks, dnsRecords] = await Promise.all([
-                this.consul.health.service(service),
+                this.getHealthChecks(service),
                 this.resolveDNS(service)
             ]);
 
             if ((!healthChecks || healthChecks.length === 0) && dnsRecords.length === 0) {
                 return { selected: null, services: [] };
             }
-
-            const dnsWeights = new Map(
-                dnsRecords.map(record => [record.ip, { weight: record.weight, port: record.port }])
+            
+            const sortedByPriority = this.sortByPriority(dnsRecords);
+            
+            const lowestPriorityValue = sortedByPriority[0]?.priority;
+            const highestPriorityRecords = sortedByPriority.filter(
+                record => record.priority === lowestPriorityValue
+            );
+            
+            if (!healthChecks || healthChecks.length === 0) {
+                const selected = this.selectFromSrvRecords(highestPriorityRecords, algorithm);
+                
+                if (!selected) {
+                    return { selected: null, services: [] };
+                }
+                
+                await this.updateSelectionMetrics(selected.name);
+                
+                return {
+                    selected: {
+                        ip: selected.ip,
+                        port: selected.port,
+                    },
+                    services: sortedByPriority.map(record => ({
+                        ip: record.ip,
+                        port: record.port,
+                    })),
+                };
+            }
+            
+            const dnsWeights = new Map<string, { weight: number; port: number; priority: number }>(
+                dnsRecords.map((record: any) => [record.ip, { 
+                    weight: record.weight, 
+                    port: record.port,
+                    priority: record.priority 
+                }])
             );
 
             const matchedHealthChecks = healthChecks.filter(check =>
@@ -118,13 +199,41 @@ class ConsulResolver {
             );
 
             if (matchedHealthChecks.length === 0) {
-                log.warn('No matching services found between DNS and Consul');
-                return { selected: null, services: [] };
+                if(this.debug) {
+                    log.debug('No matching services found between DNS and Consul health checks');
+                }
+                const selected = this.selectFromSrvRecords(highestPriorityRecords, algorithm);
+                
+                if (!selected) {
+                    return { selected: null, services: [] };
+                }
+                
+                await this.updateSelectionMetrics(selected.name);
+                
+                return {
+                    selected: {
+                        ip: selected.ip,
+                        port: selected.port,
+                    },
+                    services: sortedByPriority.map(record => ({
+                        ip: record.ip,
+                        port: record.port,
+                    })),
+                };
             }
 
-            const maxDNSWeight = Math.max(...dnsRecords.map(r => r.weight));
+            const highPriorityIPs = new Set(highestPriorityRecords.map(record => record.ip));
+            const highPriorityHealthChecks = matchedHealthChecks.filter(check => 
+                highPriorityIPs.has(check.Service.Address)
+            );
+            
+            const targetHealthChecks = highPriorityHealthChecks.length > 0 
+                ? highPriorityHealthChecks 
+                : matchedHealthChecks;
+            
+            const maxDNSWeight = Math.max(...dnsRecords.map((r: any) => r.weight || 1));
 
-            const enhancedHealthChecks = matchedHealthChecks.map(check => ({
+            const enhancedHealthChecks = targetHealthChecks.map(check => ({
                 ...check,
                 dnsWeight: this.combineHealthAndDNSWeights(
                     check,
@@ -133,7 +242,7 @@ class ConsulResolver {
                 )
             }));
 
-            const metrics = await this.getServicesMetrics(matchedHealthChecks);
+            const metrics = await this.getServicesMetrics(targetHealthChecks);
             let selectedService: { id: string; service: ServiceHealth };
 
             switch (algorithm) {
@@ -173,9 +282,110 @@ class ConsulResolver {
                 }),
             };
         } catch (error) {
-            log.error('Error selecting optimal service:', error);
+            if(this.debug) {
+                log.error('Error selecting optimal service:', error);
+            }
             return { selected: null, services: [] };
         }
+    }
+    
+    /**
+     * Get health checks from Consul with caching
+     */
+    private async getHealthChecks(service: string): Promise<ServiceHealth[]> {
+        const cacheKey = this.getHealthCacheKey(service);
+        
+        if(this.cacheEnabled) {
+            const cachedHealth = await this.redis?.get(cacheKey);
+            if (cachedHealth) {
+                return JSON.parse(cachedHealth);
+            }
+        }
+        
+        try {
+            const healthChecks = await this.consul.health.service(service);
+
+            if(this.cacheEnabled) {
+                await this.redis?.set(
+                    cacheKey,
+                    JSON.stringify(healthChecks),
+                    'EX',
+                    this.cacheTTL
+                );
+            }
+
+            return healthChecks;
+        } catch (error) {
+            if(this.debug) {
+                log.error(`Error fetching health checks for ${service}:`, error);
+            }
+            return [];
+        }
+    }
+    
+    /**
+     * Sort SRV records by priority (lower number is higher priority)
+     */
+    private sortByPriority(records: SrvRecord[]): SrvRecord[] {
+        return [...records].sort((a, b) => (a.priority || 0) - (b.priority || 0));
+    }
+    
+    /**
+     * Select a service from SRV records using the specified algorithm
+     */
+    private selectFromSrvRecords(
+        records: SrvRecord[],
+        algorithm: SelectionAlgorithm
+    ): SrvRecord | null {
+        if (!records || records.length === 0) {
+            return null;
+        }
+        
+        switch (algorithm) {
+            case SelectionAlgorithm.RoundRobin:
+                const selected = records[this.currentIndex % records.length];
+                this.currentIndex = (this.currentIndex + 1) % records.length;
+                return selected;
+                
+            case SelectionAlgorithm.WeightedRoundRobin:
+                return this.selectWeightedSrvRecord(records);
+                
+            case SelectionAlgorithm.LeastConnection:
+                const selectedLC = records[this.currentIndex % records.length];
+                this.currentIndex = (this.currentIndex + 1) % records.length;
+                return selectedLC;
+                
+            default:
+                return records[0];
+        }
+    }
+    
+    /**
+     * Select SRV record using weighted random selection
+     */
+    private selectWeightedSrvRecord(records: SrvRecord[]): SrvRecord | null {
+        if (!records || records.length === 0) {
+            return null;
+        }
+        
+        const hasNonZeroWeights = records.some(record => (record.weight || 0) > 0);
+        
+        if (!hasNonZeroWeights) {
+            return records[this.currentIndex++ % records.length];
+        }
+        
+        const totalWeight = records.reduce((sum, record) => sum + (record.weight || 1), 0);
+        
+        let random = Math.random() * totalWeight;
+        
+        for (const record of records) {
+            random -= (record.weight || 1);
+            if (random <= 0) {
+                return record;
+            }
+        }
+        
+        return records[0];
     }
 
     private roundRobinSelection(services: ServiceHealth[]): {
@@ -190,8 +400,7 @@ class ConsulResolver {
             throw new Error("No healthy services available");
         }
 
-        const service = healthyServices[this.currentIndex];
-
+        const service = healthyServices[this.currentIndex % healthyServices.length];
         this.currentIndex = (this.currentIndex + 1) % healthyServices.length;
 
         return {
@@ -234,15 +443,17 @@ class ConsulResolver {
         services: ServiceHealth[],
     ): Promise<Map<string, ServiceMetrics>> {
         const metricsMap = new Map<string, ServiceMetrics>();
-        const pipeline = this.redis.pipeline();
+        const pipeline = this.redis?.pipeline();
 
-        services.forEach((service) => {
-            pipeline.get(service.Service.ID);
-            pipeline.get(this.getConnectionKey(service.Service.ID));
-        });
+        if(this.cacheEnabled) {
+            services.forEach((service) => {
+                pipeline?.get(service.Service.ID);
+                pipeline?.get(this.getConnectionKey(service.Service.ID));
+            });
+        }
 
         try {
-            const results = await pipeline.exec();
+            const results = await pipeline?.exec();
             if (!results) {
                 services.forEach((service) => {
                     metricsMap.set(service.Service.ID, { ...this.metrics });
@@ -271,15 +482,19 @@ class ConsulResolver {
 
                     metricsMap.set(serviceId, metrics);
                 } catch (error) {
-                    log.warn(
-                        `Error processing metrics for service ${serviceId}:`,
-                        error,
-                    );
+                    if(this.debug) {
+                        log.error(
+                            `Error processing metrics for service ${serviceId}:`,
+                            error,
+                        );
+                    }
                     metricsMap.set(serviceId, { ...this.metrics });
                 }
             });
         } catch (error) {
-            log.error("Error executing Redis pipeline:", error);
+            if(this.debug) {
+                log.error("Error executing Redis pipeline:", error);
+            }
             services.forEach((service) => {
                 metricsMap.set(service.Service.ID, { ...this.metrics });
             });
@@ -298,8 +513,9 @@ class ConsulResolver {
 
                 const serviceMetrics = metrics.get(serviceId);
 
-                if (!serviceMetrics)
+                if (!serviceMetrics) {
                     throw new Error(`No metrics found for service ${serviceId}`);
+                }
 
                 const healthScore = this.calculateHealthScore(service);
                 const responseTimeScore = this.normalizeScore(
@@ -342,6 +558,8 @@ class ConsulResolver {
     private calculateHealthScore(service: ServiceHealth): number {
         const checks = service.Checks;
         const totalChecks = checks.length;
+        if (totalChecks === 0) return 0;
+        
         const passingChecks = checks.filter(
             (check) => check.Status === "passing",
         ).length;
@@ -374,10 +592,22 @@ class ConsulResolver {
             service: ServiceHealth;
         }>,
     ): { id: string; service: ServiceHealth } {
+        if (rankedServices.length === 0) {
+            throw new Error("No services available for selection");
+        }
+        
         const totalScore = rankedServices.reduce(
             (sum, service) => sum + service.score,
             0,
         );
+        
+        if (totalScore <= 0) {
+            return {
+                id: rankedServices[0].id,
+                service: rankedServices[0].service,
+            };
+        }
+        
         let random = Math.random() * totalScore;
 
         for (const service of rankedServices) {
@@ -399,7 +629,7 @@ class ConsulResolver {
     async incrementConnections(serviceId: string): Promise<void> {
         try {
             const connectionKey = this.getConnectionKey(serviceId);
-            const existingMetrics = await this.redis.get(connectionKey);
+            const existingMetrics = await this.redis?.get(connectionKey);
             let metrics: ServiceMetrics;
 
             if (existingMetrics) {
@@ -412,24 +642,28 @@ class ConsulResolver {
                 };
             }
 
-            await this.redis.set(
-                connectionKey,
-                JSON.stringify(metrics),
-                "EX",
-                24 * 60 * 60,
-            );
+            if (this.cacheEnabled) {
+                await this.redis?.set(
+                    connectionKey,
+                    JSON.stringify(metrics),
+                    "EX",
+                    24 * 60 * 60,
+                );
+            }
         } catch (error) {
-            log.warn(
-                `Failed to increment connections for service ${serviceId}:`,
-                error,
-            );
+            if(this.debug) {
+                log.error(
+                    `Failed to increment connections for service ${serviceId}:`,
+                    error,
+                );
+            }
         }
     }
 
     async decrementConnections(serviceId: string): Promise<void> {
         try {
             const connectionKey = this.getConnectionKey(serviceId);
-            const existingMetrics = await this.redis.get(connectionKey);
+            const existingMetrics = await this.redis?.get(connectionKey);
             let metrics: ServiceMetrics;
 
             if (existingMetrics) {
@@ -445,24 +679,28 @@ class ConsulResolver {
                 };
             }
 
-            await this.redis.set(
-                connectionKey,
-                JSON.stringify(metrics),
-                "EX",
-                24 * 60 * 60,
-            );
+            if (this.cacheEnabled) {
+                await this.redis?.set(
+                    connectionKey,
+                    JSON.stringify(metrics),
+                    "EX",
+                    24 * 60 * 60,
+                );
+            }
         } catch (error) {
-            log.warn(
-                `Failed to decrement connections for service ${serviceId}:`,
-                error,
-            );
+            if(this.debug) {
+                log.error(
+                    `Failed to decrement connections for service ${serviceId}:`,
+                    error,
+                );
+            }
         }
     }
 
     private async updateSelectionMetrics(serviceId: string): Promise<void> {
         try {
             const connectionKey = this.getConnectionKey(serviceId);
-            const existingMetrics = await this.redis.get(connectionKey);
+            const existingMetrics = await this.redis?.get(connectionKey);
             let metrics: ServiceMetrics;
 
             if (existingMetrics) {
@@ -473,38 +711,56 @@ class ConsulResolver {
 
             metrics.lastSelectedTime = Date.now();
 
-            await this.redis.set(
-                connectionKey,
-                JSON.stringify(metrics),
-                "EX",
-                24 * 60 * 60,
-            );
+            if (this.cacheEnabled) {
+                await this.redis?.set(
+                    connectionKey,
+                    JSON.stringify(metrics),
+                    "EX",
+                    24 * 60 * 60,
+                );
+            }
         } catch (error) {
-            log.warn(
-                `Failed to update selection metrics for service ${serviceId}:`,
-                error,
-            );
+            if(this.debug) {
+                log.error(
+                    `Failed to update selection metrics for service ${serviceId}:`,
+                    error,
+                );
+            }
         }
     }
 
     async getSelectionMetrics(serviceId: string): Promise<ServiceMetrics | null> {
         try {
-            const metrics = await this.redis.get(this.getConnectionKey(serviceId));
+            if (!this.cacheEnabled) {
+                return null;
+            }
+            const metrics = await this.redis?.get(this.getConnectionKey(serviceId));
             return metrics ? JSON.parse(metrics) : null;
         } catch (error) {
-            log.error("Error getting service metrics:", error);
+            if(this.debug) {
+                log.error("Error getting service metrics:", error);
+            }
             return null;
         }
     }
 
     async refresh(): Promise<void> {
         try {
-            const keys = await this.redis.keys(`${this.cachePrefix}:*`);
-            if (keys.length > 0) {
-                await this.redis.del(...keys);
+            if (!this.cacheEnabled) {
+                if(this.debug) {
+                    log.debug("Cache is disabled, no need to refresh");
+                }
+                return;
             }
-        } catch (error) {
-            log.error("Error refreshing metrics:", error);
+            const pattern = `${this.cachePrefix}:*`;
+            const keys = await this.redis?.keys(pattern);
+            
+            if (keys && keys.length > 0) {
+                await this.redis?.del(...keys);
+            }
+        } catch (error: any) {
+            console.log("Error refreshing Redis caches:", error);
+            throw new Error(`Failed to refresh caches: ${error.message}`);
         }
     }
 }

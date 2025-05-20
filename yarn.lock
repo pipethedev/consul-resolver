@@ -32,6 +32,35 @@
   resolved "https://registry.yarnpkg.com/@ioredis/commands/-/commands-1.2.0.tgz#6d61b3097470af1fdbbe622795b8921d42018e11"
   integrity sha512-Sx1pU8EM64o2BrqNpEO1CNLtKQwyhuXuqyfH7oGKCk+1a33d2r5saW8zNwm3j6BTExtjrv2BxTgzzkMwts6vGg==
 
+"@leichtgewicht/base64-codec@^1.0.0":
+  version "1.0.0"
+  resolved "https://registry.yarnpkg.com/@leichtgewicht/base64-codec/-/base64-codec-1.0.0.tgz#f5d730be74bd41564cf23c6d332044ae88fc31d8"
+  integrity sha512-0cgP4lRBzh3F4tlpTfs7F+PJyBN8j5yUC9KrQFWp/bREswgzZVHE8T1rNyRDWgvALwwpPtnJDQfqWUmxI33Epg==
+
+"@leichtgewicht/dns-packet@^6.0.0", "@leichtgewicht/dns-packet@^6.0.2":
+  version "6.0.3"
+  resolved "https://registry.yarnpkg.com/@leichtgewicht/dns-packet/-/dns-packet-6.0.3.tgz#002d7ca9cf0016bb7a42d005405e9a451103a7c6"
+  integrity sha512-qmVHhFBFiBvPsk/wJ/EdoWHb+tGkzY4haybmDPukhF6w0+8wpEbrHTIRE9LzeUu2P0bAbmrK8WOXt5V5QN6jQg==
+  dependencies:
+    "@leichtgewicht/ip-codec" "^2.0.4"
+    bytes.js "^0.0.2"
+    utf8-bytes "^0.0.1"
+    utf8-codec "^1.0.0"
+    utf8-length "^0.0.1"
+    utf8-string-bytes "^1.0.3"
+
+"@leichtgewicht/dns-socket@^5.0.0":
+  version "5.0.0"
+  resolved "https://registry.yarnpkg.com/@leichtgewicht/dns-socket/-/dns-socket-5.0.0.tgz#48d605e1bac89fb6c7445cac8c60e0028aa056f8"
+  integrity sha512-Sbrn/OG0HTTPGSkwIDCHy8/tUI6UglIzFsMNjzZn/Na1/i5owSm6rVi9CfKNNjRcUlYEzICELYW6EoZdjwVY2A==
+  dependencies:
+    "@leichtgewicht/dns-packet" "^6.0.0"
+
+"@leichtgewicht/ip-codec@^2.0.4":
+  version "2.0.5"
+  resolved "https://registry.yarnpkg.com/@leichtgewicht/ip-codec/-/ip-codec-2.0.5.tgz#4fc56c15c580b9adb7dc3c333a134e540b44bfb1"
+  integrity sha512-Vo+PSpZG2/fmgmiNzYK9qWRh8h/CHrwD0mo1h1DzL4yzHNSfWYujGTYsWGreD000gcgmZ7K4Ys6Tx9TxtsKdDw==
+
 "@types/node@^18.0.0":
   version "18.19.75"
   resolved "https://registry.yarnpkg.com/@types/node/-/node-18.19.75.tgz#be932799d1ab40779ffd16392a2b2300f81b565d"
@@ -85,6 +114,11 @@ buffer@^6.0.3:
   dependencies:
     base64-js "^1.3.1"
     ieee754 "^1.2.1"
+
+bytes.js@^0.0.2:
+  version "0.0.2"
+  resolved "https://registry.yarnpkg.com/bytes.js/-/bytes.js-0.0.2.tgz#a2f619b636e0af70ea6b827d732b052089b8de48"
+  integrity sha512-KrLm4hv5Qs9w6b0U7h1bCdqxrsf+e9QMsfHeyQFzAz94x/5Aqa+FTEUSNBtt5d2VuV3Hfiea3c4ti74RZDDYkg==
 
 cluster-key-slot@^1.1.0:
   version "1.1.2"
@@ -166,6 +200,17 @@ denque@^2.1.0:
   version "2.1.0"
   resolved "https://registry.yarnpkg.com/denque/-/denque-2.1.0.tgz#e93e1a6569fb5e66f16a3c2a2964617d349d6ab1"
   integrity sha512-HVQE3AAb/pxF8fQAoiqpvg9i3evqug3hoiwakOyZAwJm+6vZehbkYXZ0l4JxS+I3QxM97v5aaRNhj8v5oBhekw==
+
+dns-query@^0.11.2:
+  version "0.11.2"
+  resolved "https://registry.yarnpkg.com/dns-query/-/dns-query-0.11.2.tgz#d6253c1e4d2274daf09b8365e84b46a9dc3dd918"
+  integrity sha512-zF8qxQpqCB467o4A63DLpQClo77H642JEKMx0Ra9GFww7Rx0234Fo8NoG0LBoSBZxamWkXfLxhzDG19bTBHvXQ==
+  dependencies:
+    "@leichtgewicht/base64-codec" "^1.0.0"
+    "@leichtgewicht/dns-packet" "^6.0.2"
+    "@leichtgewicht/dns-socket" "^5.0.0"
+    "@leichtgewicht/ip-codec" "^2.0.4"
+    utf8-codec "^1.0.0"
 
 enabled@2.0.x:
   version "2.0.0"
@@ -312,6 +357,11 @@ logform@^2.7.0:
     ms "^2.1.1"
     safe-stable-stringify "^2.3.1"
     triple-beam "^1.3.0"
+
+lru-cache@^11.1.0:
+  version "11.1.0"
+  resolved "https://registry.yarnpkg.com/lru-cache/-/lru-cache-11.1.0.tgz#afafb060607108132dbc1cf8ae661afb69486117"
+  integrity sha512-QIXZUBJUx+2zHUdQujWejBkcD9+cs94tLn0+YL8UrCh+D5sCXZ4c7LaEH48pNwRY3MLDgqUFyhlCyjJPf1WP0A==
 
 minimatch@^5.0.1:
   version "5.1.6"
@@ -551,6 +601,26 @@ unique-names-generator@^4.7.1:
   version "4.7.1"
   resolved "https://registry.yarnpkg.com/unique-names-generator/-/unique-names-generator-4.7.1.tgz#966407b12ba97f618928f77322cfac8c80df5597"
   integrity sha512-lMx9dX+KRmG8sq6gulYYpKWZc9RlGsgBR6aoO8Qsm3qvkSJ+3rAymr+TnV8EDMrIrwuFJ4kruzMWM/OpYzPoow==
+
+utf8-bytes@^0.0.1:
+  version "0.0.1"
+  resolved "https://registry.yarnpkg.com/utf8-bytes/-/utf8-bytes-0.0.1.tgz#116b025448c9b500081cdfbf1f4d6c6c37d8837d"
+  integrity sha512-GifWmJAx2qAXT+lZLhbkWhBsy7pr6xWHiPWlVToDiELdWgZwt4Ogjf9tlgvKuALzTFR/d+EPQQI9ogJV3957Jg==
+
+utf8-codec@^1.0.0:
+  version "1.0.0"
+  resolved "https://registry.yarnpkg.com/utf8-codec/-/utf8-codec-1.0.0.tgz#b30252507271cd612dbf5b58f04620a5e1e7bb89"
+  integrity sha512-S/QSLezp3qvG4ld5PUfXiH7mCFxLKjSVZRFkB3DOjgwHuJPFDkInAXc/anf7BAbHt/D38ozDzL+QMZ6/7gsI6w==
+
+utf8-length@^0.0.1:
+  version "0.0.1"
+  resolved "https://registry.yarnpkg.com/utf8-length/-/utf8-length-0.0.1.tgz#d315c4bed529c977f18dd35c73d72628327d9ada"
+  integrity sha512-j/XH2ftofBiobnyApxlN/J6j/ixwT89WEjDcjT66d2i0+GIn9RZfzt8lpEXXE4jUe4NsjBSUq70kS2euQ4nnMw==
+
+utf8-string-bytes@^1.0.3:
+  version "1.0.3"
+  resolved "https://registry.yarnpkg.com/utf8-string-bytes/-/utf8-string-bytes-1.0.3.tgz#8923be75a543b1a1bb00e5a12c52c1b0553b65c6"
+  integrity sha512-i/I1Omf6lADjVBlwJpQifZOePV15snHny9w04+lc71+3t8PyWuLC/7clyoOSHOBNGXFe2PAGxmTiZ+Z4HWsPyw==
 
 util-deprecate@^1.0.1:
   version "1.0.2"

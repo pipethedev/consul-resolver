@@ -21,7 +21,9 @@
   "dependencies": {
     "@brimble/utils": "^1.5.59",
     "consul": "^2.0.1",
-    "ioredis": "^5.3.2"
+    "dns-query": "^0.11.2",
+    "ioredis": "^5.3.2",
+    "lru-cache": "^11.1.0"
   },
   "peerDependencies": {
     "consul": "^1.x",

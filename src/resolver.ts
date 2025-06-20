@@ -64,13 +64,19 @@ class ConsulResolver {
         const cacheKey = this.getDNSCacheKey(service);
 
         if(this.cacheEnabled) {
-            const cachedData = await this.redis?.get(cacheKey);
-    
-            if (cachedData) {
-                if(this.debug) {
-                    log.debug(`DNS cache hit for ${service}`);
+            try {
+                const cachedData = await Promise.race([
+                    this.redis?.get(cacheKey),
+                    new Promise((_, reject) => setTimeout(() => reject(new Error('Redis get timeout')), 200))
+                ]);
+                if (cachedData) {
+                    if(this.debug) {
+                        log.debug(`DNS cache hit for ${service}`);
+                    }
+                    return JSON.parse(cachedData as string);
                 }
-                return JSON.parse(cachedData);
+            } catch (e) {
+                if(this.debug) log.error('Redis get error or timeout:', e);
             }
         }
         
@@ -79,18 +85,19 @@ class ConsulResolver {
                 { 
                     question: { 
                         type: 'SRV',
-                        name: `${service}.service.consul` 
+                        name: service 
                     } 
                 },
                 {
-                    endpoints: [
-                        `udp://${this.config.host}:8600`,
-                        ...(this.config.dnsEndpoints || []).map(endpoint => `udp://${endpoint}`)
-                    ],
-                    timeout: this.config.dnsTimeout || 5000,
-                    retries: this.config.dnsRetries || 2
+                    endpoints: this.config.dnsEndpoints,
+                    timeout: this.config.dnsTimeout ?? 1500,
+                    retries: this.config.dnsRetries ?? 2
                 }
             );
+
+            if(this.debug) {
+                log.debug("DNS QUERY RESULT", result);
+            }
             
             if (!result.answers || result.answers.length === 0) {
                 if(this.debug) {
@@ -99,13 +106,19 @@ class ConsulResolver {
                 return [];
             }
             
+            const additionalsByName: Record<string, any> = {};
+            if (result.additionals) {
+                for (const additional of result.additionals) {
+                    if (additional.type === 'A') {
+                        additionalsByName[additional.name] = additional;
+                    }
+                }
+            }
             const records = result.answers.map((answer: any) => {
-                const aRecord = result.additionals?.find(
-                    (additional) => additional.name === (answer.data as any).target && additional.type === 'A'
-                );
-                
+                const target = (answer.data as any).target;
+                const aRecord = additionalsByName[target];
                 return {
-                    name: (answer.data as any).target,
+                    name: target,
                     ip: aRecord?.data || '',
                     port: (answer.data as any).port,
                     priority: (answer.data as any).priority,
@@ -114,12 +127,19 @@ class ConsulResolver {
             }).filter(record => record.ip);
             
             if(this.cacheEnabled) {
-                await this.redis?.set(
-                    cacheKey, 
-                    JSON.stringify(records),
-                    'EX',
-                    this.cacheTTL
-                );
+                try {
+                    await Promise.race([
+                        this.redis?.set(
+                            cacheKey, 
+                            JSON.stringify(records),
+                            'EX',
+                            this.cacheTTL
+                        ),
+                        new Promise((_, reject) => setTimeout(() => reject(new Error('Redis set timeout')), 200))
+                    ]);
+                } catch (e) {
+                    if(this.debug) log.error('Redis set error or timeout:', e);
+                }
             }
             
             return records;

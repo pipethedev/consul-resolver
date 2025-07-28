@@ -1,6 +1,6 @@
 {
   "name": "consul-resolver",
-  "version": "1.2.0",
+  "version": "1.2.1",
   "description": "A load balancer for Consul services with Redis-based metrics",
   "main": "dist/index.js",
   "types": "dist/index.d.ts",

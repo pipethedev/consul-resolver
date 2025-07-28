@@ -43,8 +43,9 @@ class ConsulResolver {
             agent: config.agent,
         });
 
-        if(this.cacheEnabled) {
+        if(this.cacheEnabled && config.redis) {
             this.redis = config.redis;
+            this.cacheEnabled = true;
         }
     }
 

@@ -18,7 +18,7 @@ export interface ConsulDNSRecord {
 }
 
 export interface ConsulResolverConfig {
-  redis: IORedis;
+  redis?: IORedis;
   cacheEnabled: boolean;
   cachePrefix: string;
   host: string;
